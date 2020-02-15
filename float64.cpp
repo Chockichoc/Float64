@@ -20,63 +20,154 @@ uint64_t power(uint64_t a, uint8_t b) {
   return result;
 }
 
-Float64::Float64(int64_t integerPart, uint64_t fractionalPart){
+Float64::Float64(uint64_t number) {
+  sign = number >> 63;
+  mantissa = number & 0xFFFFFFFFFFFFF;
+  exponent = (number >> 52) & 0x7FF;
+}
+
+Float64::Float64(int32_t inputNumber, int8_t exponent){
+
   /////SET SIGN BIT
-  if(integerPart > 0)
-    number &= ~((uint64_t)1 << 63);
+  if(inputNumber > 0)
+    sign = 0;
   else {
-    number |= (uint64_t)1 << 63;
-    integerPart *= -1;
+    sign = 1;
+    inputNumber *= -1;
   }
 
+  uint64_t integerPart = 0;
+  uint64_t fractionalPart = 0;
+  uint64_t baseNumber = 0;
+  bool isFirstDigitSet = false;
 
+  if(exponent < 0){
+    baseNumber =  power(10, countDigit(inputNumber) - exponent - 1);
+    integerPart = 0;
+    fractionalPart = inputNumber;
+  } else {
+    isFirstDigitSet = true;
+    if(exponent >= countDigit(inputNumber)){
+      baseNumber = power(10, exponent - countDigit(inputNumber) + 1);
+      integerPart = inputNumber*baseNumber;
+      fractionalPart = 0;
+    } else {
+      baseNumber = power(10, countDigit(inputNumber) - exponent - 1);
+      integerPart = inputNumber/baseNumber;
+      fractionalPart = inputNumber - integerPart * baseNumber;
+    }
+
+  }
 
   /////SET MANTISSA BITS
-  uint8_t integerPartWidth = 52;
-  while(!(integerPart & 0x8000000000000) && integerPartWidth > 0) {
+  int8_t integerPartWidth = 53;
+  while(!(integerPart & 0x10000000000000) && integerPartWidth > 0) {
     integerPart = integerPart << 1;
     integerPartWidth--;
   }
-
-
   
-  Serial.print(integerPartWidth);
-
-
-  uint8_t fractionalPartWidth = integerPartWidth;
-  uint64_t binaryFractionalPart = 0;
-  while(fractionalPart != 0 && fractionalPartWidth <= 50) {
-    uint8_t digitCount = countDigit(fractionalPart);
+  
+  uint64_t finalFractionalPart = 0;
+  uint8_t fractionalPtr = 53 - integerPartWidth;
+  while(fractionalPart != 0 && fractionalPtr > 0) {
     fractionalPart *= 2;
-    uint8_t bit = (fractionalPart*2)/(power(10, digitCount));
-    if(bit)
-      binaryFractionalPart |= 1 << (50-fractionalPartWidth);
-    fractionalPartWidth++;
+    uint8_t bit = 0;
+    if(fractionalPart >= baseNumber) {
+      fractionalPart-=baseNumber;
+      bit = 1;
+      isFirstDigitSet = true;
+    }
+    finalFractionalPart += (uint64_t)bit << (fractionalPtr-1);
+    if(isFirstDigitSet) {
+      fractionalPtr--;
+    } else {
+      integerPartWidth--;
+    }
   }
 
-/*
-  number += (uint64_t)integerPart;
-  number += (uint64_t)binaryFractionalPart;
+  mantissa = (integerPart + finalFractionalPart) & 0xFFFFFFFFFFFFF;
 
-  uint64_t f = number >> 32;
-  uint32_t b = f;
-  Serial.println(b, BIN);
-  b = number;
-  Serial.println(b, BIN);
-*/
   /////SET EXPONENT BITS
+  exponent = (integerPartWidth - 1 + 1023);
 
 }
-
 
 uint8_t Float64::getSign() {
-  return number >> 63;
+  return sign;
 }
 
-int16_t Float64::getExponent() {
-  return (number & 0x7FF0000000000000) >> 52;
+uint16_t Float64::getExponent() {
+  return exponent;
 }
 
 uint64_t Float64::getMantissa() {
-  return number & 0x000FFFFFFFFFFFFF;
+  return mantissa;
+}
+
+uint64_t Float64::getHexVersion() {
+  
+  return ((uint64_t)sign << 63) + ((uint64_t)(exponent & 0x7FF) << 52) + mantissa;
+}
+
+
+Float64 Float64::add(Float64& lOperand, Float64& rOperand) {
+
+  Float64* rFloat;
+  Float64* lFloat;
+
+  if(this->getExponent() >= rOperand.getExponent()) {
+    lFloat = &lOperand;
+    rFloat = &rOperand;
+  } else {
+    rFloat = &lOperand;
+    lFloat = &rOperand;
+  }
+
+  int16_t lExponent = lFloat->getExponent()-1023;
+  int16_t rExponent = rFloat->getExponent()-1023;
+
+  uint64_t lMantissa = lFloat->getMantissa() + ((uint64_t)1<<52);
+  uint64_t rMantissa = (rFloat->getMantissa() + ((uint64_t)1<<52)) >> (lExponent - rExponent);
+
+
+  int64_t resultMantissa = (lFloat->getSign() ? -1 : 1)*lMantissa + (rFloat->getSign() ? -1 : 1)*rMantissa;
+  uint8_t resultSign = 0;
+  if(resultMantissa < 0) {
+    resultSign = 1;
+    resultMantissa *= -1;
+  }
+
+  uint64_t bit = 0;
+  uint8_t counter = 64;
+  while(!bit) {
+    counter--;
+    bit = resultMantissa & ((uint64_t)1 << counter);
+  }
+
+  uint16_t resultExponent = lExponent + (counter - 52) + 1023;
+  
+  if(counter > 52) {
+    resultMantissa = resultMantissa >> (counter - 52);
+  } else {
+    resultMantissa = resultMantissa << (52 - counter);
+  }
+
+  resultMantissa = resultMantissa & 0xFFFFFFFFFFFFF;
+
+  return Float64{resultSign, resultExponent, (uint64_t)resultMantissa};
+}
+
+Float64 Float64::operator+(Float64& rOperand) {
+  return add(*this, rOperand);
+}
+
+Float64 Float64::operator-(Float64& rOperand) {
+  Float64 f{rOperand};
+  if(f.sign == 1) {
+    f.sign = 0;
+  } else {
+    f.sign = 1;
+  }
+
+  return add(*this, f);
 }
