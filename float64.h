@@ -23,7 +23,8 @@ class Float64 {
 
     Float64 add(Float64& lOperand, Float64& rOperand);
     Float64 operator+(Float64& rOperand);
-    Float64 operator-(Float64& rOperand);
+    Float64 operator-(Float64 rOperand);
+    Float64 operator*(Float64& rOperand);
 
 };
 

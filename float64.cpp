@@ -160,20 +160,52 @@ Float64 Float64::add(Float64& lOperand, Float64& rOperand) {
 
   resultMantissa = resultMantissa & 0xFFFFFFFFFFFFF;
 
-  return Float64{resultSign, resultExponent, (uint64_t)resultMantissa};
+  return Float64{resultSign, resultExponent, resultMantissa};
 }
 
 Float64 Float64::operator+(Float64& rOperand) {
   return add(*this, rOperand);
 }
 
-Float64 Float64::operator-(Float64& rOperand) {
-  Float64 f{rOperand};
-  if(f.sign == 1) {
-    f.sign = 0;
+Float64 Float64::operator-(Float64 rOperand) {
+  if(rOperand.sign == 1) {
+    rOperand.sign = 0;
   } else {
-    f.sign = 1;
+    rOperand.sign = 1;
   }
 
-  return add(*this, f);
+  return add(*this, rOperand);
+}
+
+Float64 Float64::operator*(Float64& rOperand) {
+  uint8_t resultSign = this->getSign() ^ rOperand.getSign();
+
+  uint64_t lMantissa = this->getMantissa() + ((uint64_t)1<<52);
+  uint64_t rMantissa = rOperand.getMantissa() + ((uint64_t)1<<52);
+  
+  uint64_t MSBResultMantissa = 0, LSBResultMantissa = 0;
+  for(uint8_t i = 0; i < 64; i++) {
+    
+    uint64_t temp_LSBResultMantissa = LSBResultMantissa + ((rMantissa & ((uint64_t)1 << i)) ? (lMantissa << i) : 0);
+    if(temp_LSBResultMantissa < LSBResultMantissa) {
+      MSBResultMantissa++;
+    }
+    
+    LSBResultMantissa = temp_LSBResultMantissa;
+    MSBResultMantissa += (rMantissa & ((uint64_t)1 << i)) ? (lMantissa >> (64 - i)) : 0;
+    
+  }
+
+  uint64_t bit = 0;
+  uint8_t counter = 0;
+  while(!bit) {
+    counter++;
+    bit = MSBResultMantissa & ((uint64_t)1 << (64-counter));
+  }
+
+  uint8_t offset = (128-(2*52)) - counter;
+  uint64_t resultMantissa = ((MSBResultMantissa << (12 - offset)) + (LSBResultMantissa >> (52 + offset))) & 0xFFFFFFFFFFFFF;
+  uint16_t resultExponent = this->getExponent()+ rOperand.getExponent() + offset - 1023;
+  
+  return Float64{resultSign, resultExponent, resultMantissa};
 }
