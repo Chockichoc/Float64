@@ -129,12 +129,18 @@ Float64 Float64::add(Float64& lOperand, Float64& rOperand) {
   uint64_t lMantissa = lFloat->getMantissa() + ((uint64_t)1<<52);
   uint64_t rMantissa = (rFloat->getMantissa() + ((uint64_t)1<<52)) >> (lExponent - rExponent);
 
+  uint8_t lSign = lFloat->getSign();
+  uint8_t rSign = rFloat->getSign();
 
-  int64_t resultMantissa = (lFloat->getSign() ? -1 : 1)*lMantissa + (rFloat->getSign() ? -1 : 1)*rMantissa;
+  uint64_t resultMantissa;
   uint8_t resultSign = 0;
-  if(resultMantissa < 0) {
-    resultSign = 1;
-    resultMantissa *= -1;
+
+  if(lSign == rSign) {
+    resultMantissa = lMantissa + rMantissa;
+    resultSign = lSign;
+  } else {
+     resultMantissa = (lMantissa > rMantissa) ? (lMantissa - rMantissa) : (rMantissa - lMantissa);
+     resultSign = (lMantissa > rMantissa) ? lSign : rSign;
   }
 
   uint64_t bit = 0;
