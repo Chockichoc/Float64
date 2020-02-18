@@ -209,3 +209,45 @@ Float64 Float64::operator*(Float64& rOperand) {
   
   return Float64{resultSign, resultExponent, resultMantissa};
 }
+
+Float64 Float64::operator/(Float64& rOperand) {
+  uint8_t resultSign = this->getSign() ^ rOperand.getSign();
+  
+  uint64_t resultMantissa = 0;
+  uint64_t dividendMantissa = this->getMantissa() + ((uint64_t)1<<52);
+  uint64_t dividerMantissa = rOperand.getMantissa() + ((uint64_t)1<<52);
+  uint8_t offset = dividerMantissa > dividendMantissa ? 1 : 0;
+  
+  for(uint8_t i = 0; i < 53; i++) {
+    if(dividendMantissa >= dividerMantissa) {
+      dividendMantissa -= dividerMantissa;
+      resultMantissa += ((uint64_t)1<<(63-i));
+    } 
+    dividendMantissa = dividendMantissa<<1;
+  }
+
+    Serial.println("Mantissa");
+  Serial.println((uint32_t)(resultMantissa>>32), HEX);
+  Serial.println((uint32_t)resultMantissa, HEX);
+
+  uint64_t bit = 0;
+  uint8_t counter = 64;
+  while(!bit && counter != 0) {
+    counter--;
+    bit = resultMantissa & ((uint64_t)1 << counter);
+  }
+
+  if(counter > 52) {
+    resultMantissa = (resultMantissa >> (counter - 52)) & 0xFFFFFFFFFFFFF;
+  } else {
+    resultMantissa = (resultMantissa << (52 - counter)) & 0xFFFFFFFFFFFFF;
+  }
+
+  Serial.println("Mantissa");
+  Serial.println((uint32_t)(resultMantissa>>32), HEX);
+  Serial.println((uint32_t)resultMantissa, HEX);
+  
+  uint16_t resultExponent = this->getExponent() - rOperand.getExponent() - 1023 - 2 - offset;
+
+  return Float64{resultSign, resultExponent, resultMantissa};
+}
