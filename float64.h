@@ -1,7 +1,7 @@
 #ifndef FLOAT64_H
 #define FLOAT64_H
 
-#include <arduino.h>
+#include <Arduino.h>
 
 class Float64 {
   private:
@@ -15,18 +15,21 @@ class Float64 {
     Float64(uint64_t _number);
     Float64(int32_t inputNumber, int8_t exponent);
     
-    uint8_t getSign();
-    uint16_t getExponent();
-    uint64_t getMantissa();
+    uint8_t getSign() const;
+    uint16_t getExponent() const;
+    uint64_t getMantissa() const;
 
     uint64_t getHexVersion();
+    
 
     Float64 add(Float64& lOperand, Float64& rOperand);
     Float64 operator+(Float64& rOperand);
     Float64 operator-(Float64 rOperand);
     Float64 operator*(Float64& rOperand);
     Float64 operator/(Float64& rOperand);
-
+    bool operator==(const Float64& rOperand);
+    bool operator>(const Float64& rOperand);
+    bool operator<(const Float64& rOperand);
 };
 
 

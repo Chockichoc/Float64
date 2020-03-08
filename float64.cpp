@@ -1,5 +1,5 @@
 #include "float64.h"
-#include <arduino.h>
+#include <Arduino.h>
 
 uint8_t countDigit(uint64_t n) 
 { 
@@ -27,7 +27,15 @@ Float64::Float64(uint64_t number) {
 }
 
 Float64::Float64(int32_t inputNumber, int8_t exponent){
-
+  if(inputNumber == 0)
+  {
+    mantissa = 0;
+    sign = 0;
+    exponent = 0;
+    return;
+  }
+  
+  exponent--;
   /////SET SIGN BIT
   if(inputNumber > 0)
     sign = 0;
@@ -88,19 +96,19 @@ Float64::Float64(int32_t inputNumber, int8_t exponent){
   mantissa = (integerPart + finalFractionalPart) & 0xFFFFFFFFFFFFF;
 
   /////SET EXPONENT BITS
-  exponent = (integerPartWidth - 1 + 1023);
+  this->exponent = (integerPartWidth - 1 + 1023);
 
 }
 
-uint8_t Float64::getSign() {
+uint8_t Float64::getSign() const {
   return sign;
 }
 
-uint16_t Float64::getExponent() {
+uint16_t Float64::getExponent() const {
   return exponent;
 }
 
-uint64_t Float64::getMantissa() {
+uint64_t Float64::getMantissa() const {
   return mantissa;
 }
 
@@ -111,6 +119,12 @@ uint64_t Float64::getHexVersion() {
 
 
 Float64 Float64::add(Float64& lOperand, Float64& rOperand) {
+
+  if(lOperand.getExponent() == 0 && lOperand.getMantissa() == 0)
+    return rOperand;
+
+  if(rOperand.getExponent() == 0 && rOperand.getMantissa() == 0)
+    return lOperand;
 
   Float64* rFloat;
   Float64* lFloat;
@@ -127,7 +141,7 @@ Float64 Float64::add(Float64& lOperand, Float64& rOperand) {
   int16_t rExponent = rFloat->getExponent()-1023;
 
   uint64_t lMantissa = lFloat->getMantissa() + ((uint64_t)1<<52);
-  uint64_t rMantissa = (rFloat->getMantissa() + ((uint64_t)1<<52)) >> (lExponent - rExponent);
+  uint64_t rMantissa = (rFloat->getMantissa() + ((uint64_t)1<<52)) >> min(53, (lExponent - rExponent));
 
   uint8_t lSign = lFloat->getSign();
   uint8_t rSign = rFloat->getSign();
@@ -143,9 +157,12 @@ Float64 Float64::add(Float64& lOperand, Float64& rOperand) {
      resultSign = (lMantissa > rMantissa) ? lSign : rSign;
   }
 
+  if(resultMantissa == 0)
+    return Float64{0};
+
   uint64_t bit = 0;
   uint8_t counter = 64;
-  while(!bit) {
+  while(!bit && counter != 0) {
     counter--;
     bit = resultMantissa & ((uint64_t)1 << counter);
   }
@@ -178,6 +195,9 @@ Float64 Float64::operator-(Float64 rOperand) {
 }
 
 Float64 Float64::operator*(Float64& rOperand) {
+  if((rOperand.getExponent() == 0 && rOperand.getMantissa() == 0) || (this->getExponent() == 0 && this->getMantissa() == 0))
+    return Float64{0};
+    
   uint8_t resultSign = this->getSign() ^ rOperand.getSign();
 
   uint64_t lMantissa = this->getMantissa() + ((uint64_t)1<<52);
@@ -211,6 +231,12 @@ Float64 Float64::operator*(Float64& rOperand) {
 }
 
 Float64 Float64::operator/(Float64& rOperand) {
+  if(this->getExponent() == 0 && this->getMantissa() == 0)
+    return Float64{0};
+
+  if(rOperand.getExponent() == 0 && rOperand.getMantissa() == 0)
+    return Float64{0x7FFFFFFFFFFFFFFF};
+  
   uint8_t resultSign = this->getSign() ^ rOperand.getSign();
   
   uint64_t resultMantissa = 0;
@@ -226,10 +252,6 @@ Float64 Float64::operator/(Float64& rOperand) {
     dividendMantissa = dividendMantissa<<1;
   }
 
-    Serial.println("Mantissa");
-  Serial.println((uint32_t)(resultMantissa>>32), HEX);
-  Serial.println((uint32_t)resultMantissa, HEX);
-
   uint64_t bit = 0;
   uint8_t counter = 64;
   while(!bit && counter != 0) {
@@ -242,12 +264,54 @@ Float64 Float64::operator/(Float64& rOperand) {
   } else {
     resultMantissa = (resultMantissa << (52 - counter)) & 0xFFFFFFFFFFFFF;
   }
-
-  Serial.println("Mantissa");
-  Serial.println((uint32_t)(resultMantissa>>32), HEX);
-  Serial.println((uint32_t)resultMantissa, HEX);
   
-  uint16_t resultExponent = this->getExponent() - rOperand.getExponent() - 1023 - 2 - offset;
+  uint16_t resultExponent = this->getExponent() - rOperand.getExponent() + 1023 - offset;
 
   return Float64{resultSign, resultExponent, resultMantissa};
+}
+
+bool Float64::operator==(const Float64& rOperand) {
+  return (this->getExponent() == rOperand.getExponent() && this->getMantissa() == rOperand.getMantissa() && this->getSign() == rOperand.getSign());
+}
+
+bool Float64::operator>(const Float64& rOperand) {
+  if(this->getSign() == 1 && rOperand.getSign() == 0)
+    return false;
+  else if(this->getSign() == 0 && rOperand.getSign() == 1)
+    return true;
+  else {
+    if(this->getExponent() > rOperand.getExponent())
+      return this->getSign() == 0 ? true : false;
+    else if(this->getExponent() < rOperand.getExponent())
+      return this->getSign() == 0 ? false : true;
+    else {
+      if(this->getMantissa() > rOperand.getMantissa())
+        return this->getSign() == 0 ? true : false;
+      else if(this->getMantissa() < rOperand.getMantissa())
+        return this->getSign() == 0 ? false : true;
+      else 
+        return false;
+    }
+  }
+}
+
+bool Float64::operator<(const Float64& rOperand) {
+  if(this->getSign() == 1 && rOperand.getSign() == 0)
+    return true;
+  else if(this->getSign() == 0 && rOperand.getSign() == 1)
+    return false;
+  else {
+    if(this->getExponent() > rOperand.getExponent())
+      return this->getSign() == 0 ? false : true;
+    else if(this->getExponent() < rOperand.getExponent())
+      return this->getSign() == 0 ? true : false;
+    else {
+      if(this->getMantissa() > rOperand.getMantissa())
+        return this->getSign() == 0 ? false : true;
+      else if(this->getMantissa() < rOperand.getMantissa())
+        return this->getSign() == 0 ? true : false;
+      else 
+        return false;
+    }
+  }
 }
